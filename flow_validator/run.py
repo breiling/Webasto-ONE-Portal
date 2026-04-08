@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from flow_validator.config import Config
 from flow_validator.crm_client import CRMClient, CRMClientError
-from flow_validator.reporter import render_json, render_text
+from flow_validator.reporter import render_csv, render_json, render_text
 from flow_validator.validator import FlowValidator
 
 
@@ -38,7 +38,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["text", "json"],
+        choices=["text", "json", "csv"],
         default="text",
         help="Output format (default: text)",
     )
@@ -140,18 +140,15 @@ def main(argv: list[str] | None = None) -> int:
     report = validator.validate(active_requests)
 
     # --- Write report ---
+    _renderers = {"json": render_json, "csv": render_csv, "text": render_text}
+    render = _renderers[args.format]
+
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as out_file:
-            if args.format == "json":
-                render_json(report, stream=out_file)
-            else:
-                render_text(report, stream=out_file)
+        with open(args.output, "w", encoding="utf-8", newline="") as out_file:
+            render(report, stream=out_file)
         print(f"Report written to {args.output}")
     else:
-        if args.format == "json":
-            render_json(report, stream=sys.stdout)
-        else:
-            render_text(report, stream=sys.stdout)
+        render(report, stream=sys.stdout)
 
     if args.exit_code and report.total_flagged > 0:
         return 1

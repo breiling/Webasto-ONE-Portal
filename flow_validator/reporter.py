@@ -1,13 +1,15 @@
 """
 Report generation for the WSD Flow Validator.
 
-Supports two formats:
+Supports three formats:
   text  — human-readable console output with severity grouping
   json  — machine-readable JSON (suitable for downstream automation / alerting)
+  csv   — flat table for Power BI / Excel import
 """
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from datetime import datetime, timezone
@@ -135,6 +137,60 @@ def _report_to_dict(report: ValidatorReport) -> dict:
         "ok": [_result_to_dict(r) for r in report.ok],
     }
 
+
+# ---------------------------------------------------------------------------
+# CSV reporter  (flat table — Power BI / Excel)
+# ---------------------------------------------------------------------------
+
+_CSV_FIELDS = [
+    "generatedAt", "id", "severity", "crmAccountNumber",
+    "contactName", "contactEmail", "requestedSystems",
+    "status", "submittedAt", "lastUpdatedAt",
+    "ageHours", "staleHours", "assignedTo", "notes",
+    "message", "flags",
+]
+
+
+def render_csv(report: ValidatorReport, stream: IO = sys.stdout) -> None:
+    """Write a flat CSV row per request, suitable for Power BI or Excel."""
+    rows = _to_flat_rows(report)
+    writer = csv.DictWriter(stream, fieldnames=_CSV_FIELDS, lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+
+
+def to_flat_rows(report: ValidatorReport) -> list[dict]:
+    """Return all requests as a list of flat dicts (used by the Power BI serve script)."""
+    return _to_flat_rows(report)
+
+
+def _to_flat_rows(report: ValidatorReport) -> list[dict]:
+    generated_at = report.generated_at.isoformat()
+    rows = []
+    for result in report.all_flagged + report.ok:
+        req = result.request
+        rows.append({
+            "generatedAt":      generated_at,
+            "id":               req.id,
+            "severity":         result.severity.value,
+            "crmAccountNumber": req.crm_account_number,
+            "contactName":      req.contact_name,
+            "contactEmail":     req.contact_email,
+            "requestedSystems": ";".join(req.requested_systems),
+            "status":           req.status.value,
+            "submittedAt":      req.submitted_at.isoformat(),
+            "lastUpdatedAt":    req.last_updated_at.isoformat(),
+            "ageHours":         round(result.age_hours, 2),
+            "staleHours":       round(result.stale_hours, 2),
+            "assignedTo":       req.assigned_to or "",
+            "notes":            req.notes or "",
+            "message":          result.message,
+            "flags":            ";".join(result.flags),
+        })
+    return rows
+
+
+# ---------------------------------------------------------------------------
 
 def _result_to_dict(result: ValidationResult) -> dict:
     req = result.request
